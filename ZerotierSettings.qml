@@ -51,7 +51,7 @@ PluginSettings {
     StringSetting {
         settingKey: "knownNetworksFile"
         label: "Known networks file (managed)"
-        description: "GUI-managed file of networks to remember when not joined. Format: '<nwid> <name>' per line. Lines starting with # are ignored. Leave blank to use ~/.config/zerotier/known-zt-networks (compatible with the zerotier_helper.sh rofi script)."
+        description: "GUI-managed file of networks to remember when not joined. Format: '<nwid> <name>' per line. Lines starting with # are ignored. Leave blank to use ~/.config/zerotier/known-zt-networks"
         defaultValue: ""
         placeholder: "~/.config/zerotier/known-zt-networks"
     }
