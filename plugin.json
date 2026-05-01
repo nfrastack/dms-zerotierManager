@@ -1,0 +1,17 @@
+{
+    "id": "zerotierManager",
+    "name": "ZeroTier Manager",
+    "capabilities": ["dankbar-widget"],
+    "category": "network",
+    "repo": "https://github.com/nfrastack/dms-zerotierManager",
+    "author": "nfrastack",
+    "description": "Show ZeroTier network status in the bar and join/leave/route networks from a popout",
+    "version": "1.0.0",
+    "type": "widget",
+    "icon": "vpn_lock",
+    "component": "./ZerotierWidget.qml",
+    "settings": "./ZerotierSettings.qml",
+    "requires_dms": ">=0.3.0",
+    "requires": ["zerotier-cli"],
+    "permissions": ["settings_read", "settings_write", "process"]
+}
