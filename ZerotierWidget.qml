@@ -11,7 +11,9 @@ PluginComponent {
     // Settings
     readonly property string zerotierBinary: pluginData.zerotierBinary || "zerotier-cli"
     readonly property bool useSudo: pluginData.useSudo ?? true
-    readonly property int refreshIntervalMs: ((pluginData.refreshInterval ?? 5)) * 1000
+    readonly property int popoutRefreshIntervalMs: Math.max(Number(pluginData.popoutRefreshInterval ?? 3) || 3, 1) * 1000
+    readonly property int refreshIntervalBase: Number(pluginData.refreshInterval ?? 15) || 15
+    readonly property int refreshIntervalMs: Math.max(refreshIntervalBase, 5) * 1000
     readonly property string knownNetworksFile: pluginData.knownNetworksFile && pluginData.knownNetworksFile.length > 0
         ? pluginData.knownNetworksFile
         : (Quickshell.env("HOME") + "/.config/zerotier/known-zt-networks")
@@ -53,48 +55,23 @@ PluginComponent {
         return [
             "ZT_BIN=" + sanitizedBinary(),
             "USE_SUDO=" + (useSudo ? "1" : ""),
-            "AUTO_ADD=" + (autoAdd ? "1" : ""),
             "KNOWN_FILE=" + knownNetworksFile,
             "EXTRA_FILE=" + extraNetworksFile
         ];
     }
 
+    // parse nw data
     readonly property string refreshScript: "{\n"
         + "  ZT=\"${ZT_BIN:-zerotier-cli}\"\n"
         + "  [ -n \"$USE_SUDO\" ] && ZT=\"sudo -n $ZT\"\n"
-        + "  LISTNET=$($ZT listnetworks 2>/dev/null) || exit 1\n"
-        + "  IPROUTE=$(ip route 2>/dev/null)\n"
-        + "  joined=$(echo \"$LISTNET\" | grep \"^200\" | grep \" OK \")\n"
-        + "  echo \"$joined\" | while IFS= read -r line; do\n"
-        + "    [ -z \"$line\" ] && continue\n"
-        + "    nwid=$(echo \"$line\" | cut -d' ' -f3)\n"
-        + "    echo \"$nwid\" | grep -Eq '^[0-9a-fA-F]{16}$' || continue\n"
-        + "    name=$(echo \"$line\" | cut -d' ' -f4)\n"
-        + "    dev=$(echo \"$line\" | cut -d' ' -f8)\n"
-        + "    ips=$(echo \"$line\" | cut -d' ' -f9-)\n"
-        + "    ad=\"0\"\n"
-        + "    $ZT get \"$nwid\" allowDefault 2>/dev/null | grep -E -q \"true|1\" && ad=\"1\"\n"
-        + "    dn=\"0\"\n"
-        + "    $ZT get \"$nwid\" allowDNS 2>/dev/null | grep -E -q \"true|1\" && dn=\"1\"\n"
-        + "    ra=\"0\"; via=\"\"\n"
-        + "    if echo \"$IPROUTE\" | grep -E \" dev $dev \" | grep -E -q \"0\\.0\\.0\\.0/1|128\\.0\\.0\\.0/1\"; then\n"
-        + "      ra=\"1\"\n"
-        + "      via=$(echo \"$IPROUTE\" | grep -E \" dev $dev \" | grep -E \"0\\.0\\.0\\.0/1|128\\.0\\.0\\.0/1\" | head -1 | cut -d' ' -f3)\n"
-        + "    fi\n"
-        + "    printf 'J\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' \"$nwid\" \"$ips\" \"$ad\" \"$dn\" \"$ra\" \"$via\" \"$name\"\n"
-        + "  done\n"
-        + "  if [ -n \"$AUTO_ADD\" ] && [ -n \"$KNOWN_FILE\" ]; then\n"
-        + "    mkdir -p \"$(dirname \"$KNOWN_FILE\")\" 2>/dev/null\n"
-        + "    touch \"$KNOWN_FILE\" 2>/dev/null\n"
-        + "    echo \"$joined\" | while IFS= read -r line; do\n"
-        + "      [ -z \"$line\" ] && continue\n"
-        + "      nwid=$(echo \"$line\" | cut -d' ' -f3)\n"
-        + "      echo \"$nwid\" | grep -Eq '^[0-9a-fA-F]{16}$' || continue\n"
-        + "      name=$(echo \"$line\" | cut -d' ' -f4)\n"
-        + "      grep -q \"^${nwid} \" \"$KNOWN_FILE\" || echo \"${nwid} ${name}\" >> \"$KNOWN_FILE\"\n"
-        + "    done\n"
+        + "  if ZJ=$($ZT -j listnetworks 2>/dev/null); then\n"
+        + "    printf '@@JSON@@\\n%s\\n' \"$ZJ\"\n"
+        + "  else\n"
+        + "    LISTNET=$($ZT listnetworks 2>/dev/null) || exit 1\n"
+        + "    printf '@@TEXT@@\\n%s\\n' \"$LISTNET\"\n"
         + "  fi\n"
-        + "  jn=$(echo \"$joined\" | awk '{print $3}')\n"
+        + "  printf '@@ROUTES@@\\n'\n"
+        + "  ip route 2>/dev/null\n"
         + "  {\n"
         + "    [ -n \"$KNOWN_FILE\" ] && [ -f \"$KNOWN_FILE\" ] && cat \"$KNOWN_FILE\"\n"
         + "    [ -n \"$EXTRA_FILE\" ] && [ -f \"$EXTRA_FILE\" ] && cat \"$EXTRA_FILE\"\n"
@@ -102,9 +79,7 @@ PluginComponent {
         + "    nwid=$(echo \"$line\" | cut -d' ' -f1)\n"
         + "    echo \"$nwid\" | grep -Eq '^[0-9a-fA-F]{16}$' || continue\n"
         + "    name=$(echo \"$line\" | cut -d' ' -f2-)\n"
-        + "    if ! echo \"$jn\" | grep -q \"^${nwid}$\"; then\n"
-        + "      printf 'K\\t%s\\t%s\\n' \"$nwid\" \"$name\"\n"
-        + "    fi\n"
+        + "    printf 'K\\t%s\\t%s\\n' \"$nwid\" \"$name\"\n"
         + "  done\n"
         + "}\n"
 
@@ -138,43 +113,102 @@ PluginComponent {
         let routingNm = "";
         let routingV = "";
         let joined = 0;
+        const joinedIds = {};
+        const fileIds = {};
+        const routes = [];
+        const textLines = [];
+        const kLines = [];
+        let section = "";
+        let jsonText = "";
         const lines = out.split("\n");
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
-            if (!line) continue;
-            const parts = line.split("\t");
-            if (parts[0] === "J" && parts.length >= 8) {
-                if (!isValidNwid(parts[1])) continue;
-                const net = {
-                    nwid: parts[1],
-                    ips: parts[2],
-                    allowDefault: parts[3] === "1",
-                    allowDNS: parts[4] === "1",
-                    routeActive: parts[5] === "1",
-                    via: parts[6],
-                    name: parts[7],
-                    joined: true
-                };
-                list.push(net);
-                joined++;
-                if (net.routeActive) {
-                    routing = true;
-                    routingNm = net.name;
-                    routingV = net.via;
-                }
-            } else if (parts[0] === "K" && parts.length >= 3) {
-                if (!isValidNwid(parts[1])) continue;
-                list.push({
-                    nwid: parts[1],
-                    name: parts[2],
-                    ips: "",
-                    allowDefault: false,
-                    allowDNS: false,
-                    routeActive: false,
-                    via: "",
-                    joined: false
-                });
+            if (line === "@@JSON@@") { section = "json"; continue; }
+            if (line === "@@TEXT@@") { section = "text"; continue; }
+            if (line === "@@ROUTES@@") { section = "routes"; continue; }
+            if (section === "json") jsonText += line + "\n";
+            else if (section === "text") textLines.push(line);
+            else if (section === "routes") {
+                if (line.indexOf("K\t") === 0) kLines.push(line);
+                else if (line) routes.push(line);
             }
+        }
+
+        function applyRouteState(net, dev) {
+            if (!dev) return;
+            const devRe = new RegExp(" dev " + dev + "( |$)");
+            for (let r = 0; r < routes.length; r++) {
+                const rl = routes[r];
+                if (devRe.test(rl)
+                    && (rl.indexOf("0.0.0.0/1") !== -1 || rl.indexOf("128.0.0.0/1") !== -1)) {
+                    net.routeActive = true;
+                    const f = rl.split(/\s+/);
+                    net.via = f[2] || "";
+                    return;
+                }
+            }
+        }
+
+        function pushJoined(nwid, name, ips, allowDefault, allowDNS, dev) {
+            if (!isValidNwid(nwid)) return;
+            const net = {
+                nwid: nwid,
+                name: name || nwid,
+                ips: ips || "",
+                allowDefault: !!allowDefault,
+                allowDNS: !!allowDNS,
+                routeActive: false,
+                via: "",
+                joined: true
+            };
+            applyRouteState(net, dev);
+            list.push(net);
+            joinedIds[nwid.toLowerCase()] = true;
+            joined++;
+            if (net.routeActive) {
+                routing = true;
+                routingNm = net.name;
+                routingV = net.via;
+            }
+        }
+
+        if (jsonText) {
+            let arr = null;
+            try { arr = JSON.parse(jsonText); } catch (e) { arr = null; }
+            if (arr) {
+                for (let i = 0; i < arr.length; i++) {
+                    const e = arr[i] || {};
+                    if (String(e.status || "") !== "OK") continue;
+                    const ips = (e.assignedAddresses || []).join(" ");
+                    pushJoined(String(e.nwid || ""), String(e.name || ""), ips,
+                        e.allowDefault, e.allowDNS, String(e.portDeviceName || ""));
+                }
+            }
+        } else {
+            for (let i = 0; i < textLines.length; i++) {
+                const tl = textLines[i];
+                if (tl.indexOf("200 ") !== 0) continue;
+                const f = tl.split(" ");
+                if (f.length < 9 || f[5] !== "OK") continue;
+                pushJoined(f[2], f[3], f.slice(8).join(" "), false, false, f[7]);
+            }
+        }
+
+        for (let i = 0; i < kLines.length; i++) {
+            const parts = kLines[i].split("\t");
+            if (parts.length < 3 || !isValidNwid(parts[1])) continue;
+            fileIds[parts[1].toLowerCase()] = true;
+            if (joinedIds[parts[1].toLowerCase()]) continue;
+            list.push({
+                nwid: parts[1],
+                name: parts[2] || parts[1],
+                ips: "",
+                allowDefault: false,
+                allowDNS: false,
+                routeActive: false,
+                via: "",
+                joined: false
+            });
         }
 
         // Merge configured networks (from plugin_settings.json) - only those whose nwid isn't already represented from listnetworks/known/extra files
@@ -205,6 +239,29 @@ PluginComponent {
         routingActive = routing;
         routingName = routingNm;
         routingVia = routingV;
+
+        if (autoAdd && knownNetworksFile) {
+            for (let a = 0; a < list.length; a++) {
+                const net = list[a];
+                if (net.joined && !fileIds[net.nwid.toLowerCase()]) {
+                    appendKnownNetwork(net.nwid, net.name);
+                }
+            }
+        }
+    }
+
+    function appendKnownNetwork(nwid, name) {
+        if (!isValidNwid(nwid) || !knownNetworksFile) return;
+        const clean = String(name || "").replace(/[\r\n\t]/g, " ").trim() || nwid;
+        const script = "mkdir -p \"$(dirname \"$KNOWN_FILE\")\" 2>/dev/null; "
+            + "touch \"$KNOWN_FILE\" 2>/dev/null; "
+            + "grep -q \"^$1 \" \"$KNOWN_FILE\" || printf '%s %s\\n' \"$1\" \"$2\" >> \"$KNOWN_FILE\"";
+        Proc.runCommand(
+            "zerotierManager.remember." + nwid,
+            ["env", "KNOWN_FILE=" + knownNetworksFile].concat(["sh", "-c", script, "zerotier-remember", nwid, clean]),
+            function(out, exitCode) { Qt.callLater(root.refresh); },
+            20
+        );
     }
 
     // Actions
@@ -269,13 +326,21 @@ PluginComponent {
         );
     }
 
-    // Timers
+    // change poll tick when popout when
     Timer {
         id: refreshTimer
         interval: root.refreshIntervalMs
         running: true
         repeat: true
         triggeredOnStart: true
+        onTriggered: root.refresh()
+    }
+
+    Timer {
+        id: popoutTimer
+        interval: root.popoutRefreshIntervalMs
+        running: false
+        repeat: true
         onTriggered: root.refresh()
     }
 
@@ -483,7 +548,8 @@ PluginComponent {
                 }
             }
 
-            Component.onCompleted: root.refresh()
+            Component.onCompleted: { root.refresh(); popoutTimer.restart(); }
+            Component.onDestruction: popoutTimer.stop()
 
             Column {
                 width: parent.width

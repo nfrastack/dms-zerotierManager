@@ -71,7 +71,8 @@ Open the plugin settings in DMS (Settings → Plugins → ZeroTier Manager) or e
 | -------------------- | ----------------- | ----------------------------------------------------------------------------- | -------------------------------------- |
 | `zerotierBinary`     | string            | Binary name or absolute path.                                                 | `zerotier-cli`                         |
 | `useSudo`            | bool              | Prepend `sudo -n` to calls.                                 | `true`                                 |
-| `refreshInterval`    | integer (seconds) | Poll cadence for status.                                                      | `5`                                    |
+| `refreshInterval`    | integer (seconds) | Background poll cadence (min 5). One `zerotier-cli -j listnetworks` plus `ip route` per tick. | `15`                        |
+| `popoutRefreshInterval` | integer (seconds) | Faster poll cadence while the popout is open (min 1).             | `3`                         |
 | `knownNetworksFile`  | string            | Managed file the plugin writes to.                                            | `~/.config/zerotier/known-zt-networks` |
 | `extraNetworksFile`  | string            | Read-only file merged into the list (plugin does not write).                  | `""`                                   |
 | `autoAdd`            | bool              | Automatically append externally-joined networks to the known file.            | `true`                                 |

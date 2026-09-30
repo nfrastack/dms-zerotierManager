@@ -40,12 +40,23 @@ PluginSettings {
     SliderSetting {
         settingKey: "refreshInterval"
         label: "Refresh interval"
-        description: "How often to poll ZeroTier for status updates."
-        defaultValue: 5
-        minimum: 1
+        description: "How often to poll ZeroTier in the background. Uses one 'zerotier-cli -j listnetworks' call plus 'ip route' per tick."
+        defaultValue: 15
+        minimum: 5
         maximum: 60
         unit: "s"
         leftIcon: "schedule"
+    }
+
+    SliderSetting {
+        settingKey: "popoutRefreshInterval"
+        label: "Popout refresh interval"
+        description: "Faster poll cadence while the popout is open. Stops when the popout closes."
+        defaultValue: 3
+        minimum: 1
+        maximum: 15
+        unit: "s"
+        leftIcon: "refresh"
     }
 
     StringSetting {
