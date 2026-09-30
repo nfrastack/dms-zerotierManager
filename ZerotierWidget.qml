@@ -10,7 +10,7 @@ PluginComponent {
 
     // Settings
     readonly property string zerotierBinary: pluginData.zerotierBinary || "zerotier-cli"
-    readonly property bool useSudo: pluginData.useSudo ?? true
+    readonly property bool useSudo: pluginData.useSudo ?? false
     readonly property int popoutRefreshIntervalMs: Math.max(Number(pluginData.popoutRefreshInterval ?? 3) || 3, 1) * 1000
     readonly property int refreshIntervalBase: Number(pluginData.refreshInterval ?? 15) || 15
     readonly property int refreshIntervalMs: Math.max(refreshIntervalBase, 5) * 1000

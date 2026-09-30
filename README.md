@@ -46,7 +46,7 @@ ZeroTier Manager is a DankMaterialShell (DMS) bar widget that shows ZeroTier net
 - `zerotier-one` (daemon) running on the host
 - `zerotier-cli` and access to any required auth tokens or port files
 - `ip` command (used to detect default-route state)
-- Optinal `sudo` for `zerotier-cli` if you enable the "Run with sudo" setting
+- Optional `sudo` for `zerotier-cli` if you enable the "Run with sudo" setting
 
 Example sudoers line
 
@@ -67,16 +67,16 @@ git clone github.com/nfrastack/zerotierManager ~/.config/DankMaterialShell/plugi
 
 Open the plugin settings in DMS (Settings → Plugins → ZeroTier Manager) or edit `plugin_settings.json` for these keys:
 
-| Key                  | Type              | Description                                                                   | Default                                |
-| -------------------- | ----------------- | ----------------------------------------------------------------------------- | -------------------------------------- |
-| `zerotierBinary`     | string            | Binary name or absolute path.                                                 | `zerotier-cli`                         |
-| `useSudo`            | bool              | Prepend `sudo -n` to calls.                                 | `true`                                 |
-| `refreshInterval`    | integer (seconds) | Background poll cadence (min 5). One `zerotier-cli -j listnetworks` plus `ip route` per tick. | `15`                        |
-| `popoutRefreshInterval` | integer (seconds) | Faster poll cadence while the popout is open (min 1).             | `3`                         |
-| `knownNetworksFile`  | string            | Managed file the plugin writes to.                                            | `~/.config/zerotier/known-zt-networks` |
-| `extraNetworksFile`  | string            | Read-only file merged into the list (plugin does not write).                  | `""`                                   |
-| `autoAdd`            | bool              | Automatically append externally-joined networks to the known file.            | `true`                                 |
-| `configuredNetworks` | array             | List of `{ nwid, name }` entries stored inline and shown as OFF until joined. | `[]`                                   |
+| Key                     | Type              | Description                                                                                   | Default                                |
+| ----------------------- | ----------------- | --------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `zerotierBinary`        | string            | Binary name or absolute path.                                                                 | `zerotier-cli`                         |
+| `useSudo`            | bool              | Prepend `sudo -n` to calls. Leave off if your user can already talk to the daemon (zerotier-one group or readable auth token). | `false`            |
+| `refreshInterval`       | integer (seconds) | Background poll cadence (min 5). One `zerotier-cli -j listnetworks` plus `ip route` per tick. | `15`                                   |
+| `popoutRefreshInterval` | integer (seconds) | Faster poll cadence while the popout is open (min 1).                                         | `3`                                    |
+| `knownNetworksFile`     | string            | Managed file the plugin writes to.                                                            | `~/.config/zerotier/known-zt-networks` |
+| `extraNetworksFile`     | string            | Read-only file merged into the list (plugin does not write).                                  | `""`                                   |
+| `autoAdd`               | bool              | Automatically append externally-joined networks to the known file.                            | `true`                                 |
+| `configuredNetworks`    | array             | List of `{ nwid, name }` entries stored inline and shown as OFF until joined.                 | `[]`                                   |
 
 Known/external networks file format:
 

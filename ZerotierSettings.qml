@@ -33,8 +33,8 @@ PluginSettings {
     ToggleSetting {
         settingKey: "useSudo"
         label: "Run with sudo -n"
-        description: "Prepend 'sudo -n' to zerotier-cli calls. Requires passwordless sudo for zerotier-cli (NOPASSWD in sudoers)"
-        defaultValue: true
+        description: "Prepend 'sudo -n' to zerotier-cli calls. Requires passwordless sudo for zerotier-cli (NOPASSWD in sudoers). Leave off if your user can already talk to the daemon (zerotier-one group membership or a readable auth token)."
+        defaultValue: false
     }
 
     SliderSetting {
