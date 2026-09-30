@@ -60,25 +60,24 @@ PluginSettings {
     }
 
     StringSetting {
-        settingKey: "knownNetworksFile"
-        label: "Known networks file (managed)"
-        description: "GUI-managed file of networks to remember when not joined. Format: '<nwid> <name>' per line. Lines starting with # are ignored. Leave blank to use ~/.config/zerotier/known-zt-networks"
-        defaultValue: ""
-        placeholder: "~/.config/zerotier/known-zt-networks"
-    }
-
-    StringSetting {
         settingKey: "extraNetworksFile"
         label: "Extra networks file (read-only)"
-        description: "Optional second file merged into the network list. Same format as the known-networks file. Plugin never writes to this file. Duplicates with the known file are deduped by network ID."
+        description: "Optional file merged into the network list. Same format as below. Plugin never writes to this file. Duplicates are deduped by network ID."
         defaultValue: ""
         placeholder: ""
     }
 
     ToggleSetting {
+        settingKey: "storeInSettings"
+        label: "Store remembered networks in plugin settings"
+        description: "When on, networks you join are remembered in 'Configured networks' below and no files are created. When off, they are appended to the legacy known-networks file (~/.config/zerotier/known-zt-networks) instead."
+        defaultValue: true
+    }
+
+    ToggleSetting {
         settingKey: "autoAdd"
         label: "Auto-add joined networks"
-        description: "When you join a network outside the plugin, automatically add it to the known-networks file (the managed one) so it shows up here even after you leave it."
+        description: "When you join a network outside the plugin, automatically remember it (in plugin settings, or in the legacy file if storage above is off) so it shows up here even after you leave it."
         defaultValue: true
     }
 

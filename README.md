@@ -9,7 +9,7 @@ ZeroTier Manager is a DankMaterialShell (DMS) bar widget that shows ZeroTier net
 
 - Bar pill summarizing overall state (no networks / joined / routing)
 - Popout listing joined and known networks with per-network actions: Join, Leave, Enable/Disable default route, Enable/Disable DNS
-- Auto-add networks you join externally to a managed known-networks file
+- Auto-add networks you join externally to configured networks (stored in plugin settings or optional external file)
 - Support for a read-only extra networks file and inline configured networks
 - Non-blocking background polling; actions run via configurable `zerotier-cli` invocation (optionally with `sudo`)
 
@@ -67,18 +67,21 @@ git clone github.com/nfrastack/zerotierManager ~/.config/DankMaterialShell/plugi
 
 Open the plugin settings in DMS (Settings → Plugins → ZeroTier Manager) or edit `plugin_settings.json` for these keys:
 
-| Key                     | Type              | Description                                                                                   | Default                                |
-| ----------------------- | ----------------- | --------------------------------------------------------------------------------------------- | -------------------------------------- |
-| `zerotierBinary`        | string            | Binary name or absolute path.                                                                 | `zerotier-cli`                         |
-| `useSudo`            | bool              | Prepend `sudo -n` to calls. Leave off if your user can already talk to the daemon (zerotier-one group or readable auth token). | `false`            |
-| `refreshInterval`       | integer (seconds) | Background poll cadence (min 5). One `zerotier-cli -j listnetworks` plus `ip route` per tick. | `15`                                   |
-| `popoutRefreshInterval` | integer (seconds) | Faster poll cadence while the popout is open (min 1).                                         | `3`                                    |
-| `knownNetworksFile`     | string            | Managed file the plugin writes to.                                                            | `~/.config/zerotier/known-zt-networks` |
-| `extraNetworksFile`     | string            | Read-only file merged into the list (plugin does not write).                                  | `""`                                   |
-| `autoAdd`               | bool              | Automatically append externally-joined networks to the known file.                            | `true`                                 |
-| `configuredNetworks`    | array             | List of `{ nwid, name }` entries stored inline and shown as OFF until joined.                 | `[]`                                   |
+| Key                     | Type              | Description                                                                                                                | Default        |
+| ----------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `zerotierBinary`        | string            | Binary name or absolute path.                                                                                              | `zerotier-cli` |
+| `useSudo`               | bool              | Prepend `sudo -n` to calls. Leave off if your user can already talk to the daemon (zerotier group or readable auth token). | `false`        |
+| `refreshInterval`       | integer (seconds) | Background poll cadence (min 5). One `zerotier-cli -j listnetworks` plus `ip route` per tick.                              | `15`           |
+| `popoutRefreshInterval` | integer (seconds) | Faster poll cadence while the popout is open (min 1).                                                                      | `3`            |
+| `extraNetworksFile`     | string            | Read-only file merged into the list (plugin does not write).                                                               | `""`           |
+| `autoAdd`               | bool              | Automatically remember externally-joined networks (in settings, or in the legacy file if storage is off).                  | `true`         |
+| `storeInSettings`       | bool              | Remember networks in plugin settings. When off, the known-networks file is used instead.                                   | `true`         |
+| `configuredNetworks`    | array             | List of `{ nwid, name }` entries stored inline and shown as OFF until joined.                                              | `[]`           |
+| `knownFileMigrated`     | bool              | Internal one-time import flag for the legacy known-networks file. Do not edit.                                             | `false`        |
 
-Known/external networks file format:
+The `knownNetworksFile` (default `~/.config/zerotier/known-zt-networks` is imported once into `configuredNetworks` and then left alone while `storeInSettings` is on. Turn `storeInSettings` off to keep the old behavior of appending to that file instead. A custom path is still honored via the `knownNetworksFile` key in `plugin_settings.json`. For file-based lists going forward, use `extraNetworksFile`.
+
+Extra networks file format:
 
 ```text
 # Each non-comment line: <network-id> <display name> <system>

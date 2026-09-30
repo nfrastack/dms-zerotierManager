@@ -17,6 +17,8 @@ PluginComponent {
     readonly property string knownNetworksFile: pluginData.knownNetworksFile && pluginData.knownNetworksFile.length > 0
         ? pluginData.knownNetworksFile
         : (Quickshell.env("HOME") + "/.config/zerotier/known-zt-networks")
+    readonly property bool knownFileMigrated: pluginData.knownFileMigrated ?? false
+    readonly property bool storeInSettings: pluginData.storeInSettings ?? true
     readonly property string extraNetworksFile: pluginData.extraNetworksFile || ""
     readonly property bool autoAdd: pluginData.autoAdd ?? true
     readonly property var configuredNetworks: pluginData.configuredNetworks || []
@@ -56,7 +58,8 @@ PluginComponent {
             "ZT_BIN=" + sanitizedBinary(),
             "USE_SUDO=" + (useSudo ? "1" : ""),
             "KNOWN_FILE=" + knownNetworksFile,
-            "EXTRA_FILE=" + extraNetworksFile
+            "EXTRA_FILE=" + extraNetworksFile,
+            "MIGRATED=" + ((knownFileMigrated && storeInSettings) ? "1" : "")
         ];
     }
 
@@ -72,15 +75,22 @@ PluginComponent {
         + "  fi\n"
         + "  printf '@@ROUTES@@\\n'\n"
         + "  ip route 2>/dev/null\n"
-        + "  {\n"
-        + "    [ -n \"$KNOWN_FILE\" ] && [ -f \"$KNOWN_FILE\" ] && cat \"$KNOWN_FILE\"\n"
-        + "    [ -n \"$EXTRA_FILE\" ] && [ -f \"$EXTRA_FILE\" ] && cat \"$EXTRA_FILE\"\n"
-        + "  } | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' | awk '!seen[$1]++' | while IFS= read -r line; do\n"
-        + "    nwid=$(echo \"$line\" | cut -d' ' -f1)\n"
-        + "    echo \"$nwid\" | grep -Eq '^[0-9a-fA-F]{16}$' || continue\n"
-        + "    name=$(echo \"$line\" | cut -d' ' -f2-)\n"
-        + "    printf 'K\\t%s\\t%s\\n' \"$nwid\" \"$name\"\n"
-        + "  done\n"
+        + "  if [ -z \"$MIGRATED\" ] && [ -n \"$KNOWN_FILE\" ] && [ -f \"$KNOWN_FILE\" ]; then\n"
+        + "    grep -v '^[[:space:]]*#' \"$KNOWN_FILE\" | grep -v '^[[:space:]]*$' | awk '!seen[$1]++' | while IFS= read -r line; do\n"
+        + "      nwid=$(echo \"$line\" | cut -d' ' -f1)\n"
+        + "      echo \"$nwid\" | grep -Eq '^[0-9a-fA-F]{16}$' || continue\n"
+        + "      name=$(echo \"$line\" | cut -d' ' -f2-)\n"
+        + "      printf 'M\\t%s\\t%s\\n' \"$nwid\" \"$name\"\n"
+        + "    done\n"
+        + "  fi\n"
+        + "  if [ -n \"$EXTRA_FILE\" ] && [ -f \"$EXTRA_FILE\" ]; then\n"
+        + "    grep -v '^[[:space:]]*#' \"$EXTRA_FILE\" | grep -v '^[[:space:]]*$' | awk '!seen[$1]++' | while IFS= read -r line; do\n"
+        + "      nwid=$(echo \"$line\" | cut -d' ' -f1)\n"
+        + "      echo \"$nwid\" | grep -Eq '^[0-9a-fA-F]{16}$' || continue\n"
+        + "      name=$(echo \"$line\" | cut -d' ' -f2-)\n"
+        + "      printf 'K\\t%s\\t%s\\n' \"$nwid\" \"$name\"\n"
+        + "    done\n"
+        + "  fi\n"
         + "}\n"
 
     function refresh() {
@@ -118,6 +128,7 @@ PluginComponent {
         const routes = [];
         const textLines = [];
         const kLines = [];
+        const mLines = [];
         let section = "";
         let jsonText = "";
         const lines = out.split("\n");
@@ -130,6 +141,7 @@ PluginComponent {
             else if (section === "text") textLines.push(line);
             else if (section === "routes") {
                 if (line.indexOf("K\t") === 0) kLines.push(line);
+                else if (line.indexOf("M\t") === 0) mLines.push(line);
                 else if (line) routes.push(line);
             }
         }
@@ -194,8 +206,9 @@ PluginComponent {
             }
         }
 
-        for (let i = 0; i < kLines.length; i++) {
-            const parts = kLines[i].split("\t");
+        const fileLines = kLines.concat(mLines);
+        for (let i = 0; i < fileLines.length; i++) {
+            const parts = fileLines[i].split("\t");
             if (parts.length < 3 || !isValidNwid(parts[1])) continue;
             fileIds[parts[1].toLowerCase()] = true;
             if (joinedIds[parts[1].toLowerCase()]) continue;
@@ -240,19 +253,45 @@ PluginComponent {
         routingName = routingNm;
         routingVia = routingV;
 
-        if (autoAdd && knownNetworksFile) {
+        // remove in 1.2.0
+        // runtime import of old managed file into settings
+        if (storeInSettings && !knownFileMigrated) {
+            const toImport = [];
+            for (let m = 0; m < mLines.length; m++) {
+                const parts = mLines[m].split("\t");
+                if (parts.length < 3 || !isValidNwid(parts[1])) continue;
+                toImport.push({ nwid: parts[1], name: parts[2] });
+            }
+            mergeIntoConfigured(toImport, 100);
+            if (pluginService && pluginId && pluginService.savePluginData) {
+                pluginService.savePluginData(pluginId, "knownFileMigrated", true);
+            }
+        }
+
+        // settings or knownNetworksFile
+        if (autoAdd) {
+            const candidates = [];
             for (let a = 0; a < list.length; a++) {
                 const net = list[a];
                 if (net.joined && !fileIds[net.nwid.toLowerCase()]) {
-                    appendKnownNetwork(net.nwid, net.name);
+                    candidates.push({ nwid: net.nwid, name: net.name });
+                }
+            }
+            if (candidates.length) {
+                if (storeInSettings) {
+                    mergeIntoConfigured(candidates, 200);
+                } else {
+                    for (let c = 0; c < candidates.length; c++) {
+                        appendKnownFile(candidates[c].nwid, candidates[c].name);
+                    }
                 }
             }
         }
     }
 
-    function appendKnownNetwork(nwid, name) {
+    function appendKnownFile(nwid, name) {
         if (!isValidNwid(nwid) || !knownNetworksFile) return;
-        const clean = String(name || "").replace(/[\r\n\t]/g, " ").trim() || nwid;
+        const clean = cleanNetName(name, nwid);
         const script = "mkdir -p \"$(dirname \"$KNOWN_FILE\")\" 2>/dev/null; "
             + "touch \"$KNOWN_FILE\" 2>/dev/null; "
             + "grep -q \"^$1 \" \"$KNOWN_FILE\" || printf '%s %s\\n' \"$1\" \"$2\" >> \"$KNOWN_FILE\"";
@@ -262,6 +301,35 @@ PluginComponent {
             function(out, exitCode) { Qt.callLater(root.refresh); },
             20
         );
+    }
+
+    function mergeIntoConfigured(newEntries, cap) {
+        if (!newEntries || !newEntries.length) return false;
+        if (!pluginService || !pluginId || !pluginService.savePluginData) return false;
+        const current = (pluginService.loadPluginData
+            ? pluginService.loadPluginData(pluginId, "configuredNetworks", []) : []) || [];
+        const have = {};
+        for (let i = 0; i < current.length; i++) {
+            if (current[i] && current[i].nwid) have[String(current[i].nwid).toLowerCase()] = true;
+        }
+        const merged = current.slice();
+        const limit = cap || 100;
+        let added = false;
+        for (let i = 0; i < newEntries.length && merged.length < limit; i++) {
+            const e = newEntries[i];
+            if (!e || !isValidNwid(e.nwid)) continue;
+            const id = String(e.nwid).toLowerCase();
+            if (have[id]) continue;
+            merged.push({ nwid: id, name: cleanNetName(e.name, id) });
+            have[id] = true;
+            added = true;
+        }
+        if (added) pluginService.savePluginData(pluginId, "configuredNetworks", merged);
+        return added;
+    }
+
+    function cleanNetName(name, fallback) {
+        return String(name || "").replace(/[\r\n\t]/g, " ").trim() || fallback;
     }
 
     // Actions
