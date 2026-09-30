@@ -12,6 +12,6 @@
     "component": "./ZerotierWidget.qml",
     "settings": "./ZerotierSettings.qml",
     "requires_dms": ">=0.3.0",
-    "requires": ["zerotier-cli"],
+    "requires": ["zerotier-cli", "ip"],
     "permissions": ["settings_read", "settings_write", "process"]
 }
