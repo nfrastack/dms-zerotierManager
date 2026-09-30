@@ -29,8 +29,14 @@ PluginComponent {
     property bool loading: false
     property bool zerotierAvailable: true
 
-    // In-flight action tracking - nwid -> true while a command is pending
     property var inFlight: ({})
+    function isValidNwid(id) { return /^[0-9a-fA-F]{16}$/.test(id || ""); }
+    function sanitizedBinary() {
+        const raw = String(zerotierBinary || "").trim();
+        if (!raw) return "zerotier-cli";
+        if (/^[A-Za-z0-9_\/.\-=:+-]+(?: +[A-Za-z0-9_\/.\-=:+-]+)*$/.test(raw)) return raw;
+        return "zerotier-cli";
+    }
     function setInFlight(nwid, on) {
         const m = Object.assign({}, inFlight);
         if (on) m[nwid] = true;
@@ -45,7 +51,7 @@ PluginComponent {
     // Refresh
     function refreshEnv() {
         return [
-            "ZT_BIN=" + zerotierBinary,
+            "ZT_BIN=" + sanitizedBinary(),
             "USE_SUDO=" + (useSudo ? "1" : ""),
             "AUTO_ADD=" + (autoAdd ? "1" : ""),
             "KNOWN_FILE=" + knownNetworksFile,
@@ -62,6 +68,7 @@ PluginComponent {
         + "  echo \"$joined\" | while IFS= read -r line; do\n"
         + "    [ -z \"$line\" ] && continue\n"
         + "    nwid=$(echo \"$line\" | cut -d' ' -f3)\n"
+        + "    echo \"$nwid\" | grep -Eq '^[0-9a-fA-F]{16}$' || continue\n"
         + "    name=$(echo \"$line\" | cut -d' ' -f4)\n"
         + "    dev=$(echo \"$line\" | cut -d' ' -f8)\n"
         + "    ips=$(echo \"$line\" | cut -d' ' -f9-)\n"
@@ -82,6 +89,7 @@ PluginComponent {
         + "    echo \"$joined\" | while IFS= read -r line; do\n"
         + "      [ -z \"$line\" ] && continue\n"
         + "      nwid=$(echo \"$line\" | cut -d' ' -f3)\n"
+        + "      echo \"$nwid\" | grep -Eq '^[0-9a-fA-F]{16}$' || continue\n"
         + "      name=$(echo \"$line\" | cut -d' ' -f4)\n"
         + "      grep -q \"^${nwid} \" \"$KNOWN_FILE\" || echo \"${nwid} ${name}\" >> \"$KNOWN_FILE\"\n"
         + "    done\n"
@@ -92,6 +100,7 @@ PluginComponent {
         + "    [ -n \"$EXTRA_FILE\" ] && [ -f \"$EXTRA_FILE\" ] && cat \"$EXTRA_FILE\"\n"
         + "  } | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' | awk '!seen[$1]++' | while IFS= read -r line; do\n"
         + "    nwid=$(echo \"$line\" | cut -d' ' -f1)\n"
+        + "    echo \"$nwid\" | grep -Eq '^[0-9a-fA-F]{16}$' || continue\n"
         + "    name=$(echo \"$line\" | cut -d' ' -f2-)\n"
         + "    if ! echo \"$jn\" | grep -q \"^${nwid}$\"; then\n"
         + "      printf 'K\\t%s\\t%s\\n' \"$nwid\" \"$name\"\n"
@@ -135,6 +144,7 @@ PluginComponent {
             if (!line) continue;
             const parts = line.split("\t");
             if (parts[0] === "J" && parts.length >= 8) {
+                if (!isValidNwid(parts[1])) continue;
                 const net = {
                     nwid: parts[1],
                     ips: parts[2],
@@ -153,6 +163,7 @@ PluginComponent {
                     routingV = net.via;
                 }
             } else if (parts[0] === "K" && parts.length >= 3) {
+                if (!isValidNwid(parts[1])) continue;
                 list.push({
                     nwid: parts[1],
                     name: parts[2],
@@ -173,6 +184,7 @@ PluginComponent {
         for (let c = 0; c < cfgList.length; c++) {
             const cfg = cfgList[c];
             if (!cfg || !cfg.nwid) continue;
+            if (!isValidNwid(String(cfg.nwid))) continue;
             const id = String(cfg.nwid).toLowerCase();
             if (seen[id]) continue;
             list.push({
@@ -197,35 +209,42 @@ PluginComponent {
 
     // Actions
     function executeAction(action, nwid, name) {
+        const id = String(nwid || "");
+        if (!isValidNwid(id)) {
+            if (typeof ToastService !== "undefined") {
+                ToastService.showError("ZeroTier: invalid network ID");
+            }
+            return;
+        }
         let cmd = "";
         let toastMsg = "";
 
         if (action === "join") {
-            cmd = "$ZT join \"" + nwid + "\"";
-            toastMsg = "Joining " + (name || nwid);
+            cmd = '$ZT join "$NWID"';
+            toastMsg = "Joining " + (name || id);
         } else if (action === "leave") {
-            cmd = "$ZT leave \"" + nwid + "\"";
+            cmd = '$ZT leave "$NWID"';
             toastMsg = "Leaving " + name;
         } else if (action === "enableDefault") {
-            cmd = "$ZT set \"" + nwid + "\" allowDefault=1";
+            cmd = '$ZT set "$NWID" allowDefault=1';
             toastMsg = "Default route enabled for " + name;
         } else if (action === "disableDefault") {
-            cmd = "$ZT set \"" + nwid + "\" allowDefault=0";
+            cmd = '$ZT set "$NWID" allowDefault=0';
             toastMsg = "Default route disabled for " + name;
         } else if (action === "enableDNS") {
-            cmd = "$ZT set \"" + nwid + "\" allowDNS=1";
+            cmd = '$ZT set "$NWID" allowDNS=1';
             toastMsg = "DNS enabled for " + name;
         } else if (action === "disableDNS") {
-            cmd = "$ZT set \"" + nwid + "\" allowDNS=0";
+            cmd = '$ZT set "$NWID" allowDNS=0';
             toastMsg = "DNS disabled for " + name;
         } else if (action === "joinAndRoute") {
-            cmd = "$ZT join \"" + nwid + "\" && sleep 2 && $ZT set \"" + nwid + "\" allowDefault=1";
-            toastMsg = "Joining " + (name || nwid) + " with default route";
+            cmd = '$ZT join "$NWID" && sleep 2 && $ZT set "$NWID" allowDefault=1';
+            toastMsg = "Joining " + (name || id) + " with default route";
         } else {
             return;
         }
 
-        const fullScript = "ZT=\"${ZT_BIN:-zerotier-cli}\"; [ -n \"$USE_SUDO\" ] && ZT=\"sudo -n $ZT\"; " + cmd;
+        const fullScript = "ZT=\"${ZT_BIN:-zerotier-cli}\"; [ -n \"$USE_SUDO\" ] && ZT=\"sudo -n $ZT\"; NWID=\"$1\"; " + cmd;
         const env = refreshEnv();
 
         setInFlight(nwid, true);
@@ -233,8 +252,8 @@ PluginComponent {
         inFlightTimer.restart();
 
         Proc.runCommand(
-            "zerotierManager.action." + action + "." + nwid,
-            ["env"].concat(env).concat(["sh", "-c", fullScript]),
+            "zerotierManager.action." + action + "." + id,
+            ["env"].concat(env).concat(["sh", "-c", fullScript, "zerotier-action", id]),
             function(out, exitCode) {
                 if (typeof ToastService !== "undefined") {
                     if (exitCode === 0) {
