@@ -6,7 +6,7 @@
     "repo": "https://github.com/nfrastack/dms-zerotierManager",
     "author": "nfrastack",
     "description": "Show ZeroTier network status in the bar and join/leave/route networks from a popout",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "type": "widget",
     "icon": "vpn_lock",
     "component": "./ZerotierWidget.qml",
